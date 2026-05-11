@@ -145,21 +145,48 @@
 
   // ------- Render times from GHL slots -------
   function renderTimes(slots) {
-    timeGrid.innerHTML = "";
+    const morningGrid = $("morning-grid");
+    const afternoonGrid = $("afternoon-grid");
+    morningGrid.innerHTML = "";
+    afternoonGrid.innerHTML = "";
 
     if (!slots || slots.length === 0) {
-      timeGrid.innerHTML = '<p style="font-size:.875rem;color:var(--muted-foreground);text-align:center;grid-column:1/-1;padding:16px 0;">No available slots for this date</p>';
+      morningGrid.innerHTML = '<p style="font-size:.8rem;color:var(--muted-foreground);text-align:center;grid-column:1/-1;padding:6px 0;">No available slots</p>';
+      afternoonGrid.innerHTML = '<p style="font-size:.8rem;color:var(--muted-foreground);text-align:center;grid-column:1/-1;padding:6px 0;">No available slots</p>';
       return;
     }
 
-    slots.forEach((s) => {
-      const b = document.createElement("button");
-      b.type = "button"; b.className = "time-cell";
-      if (selectedSlotIso === s.iso) b.classList.add("selected");
-      b.textContent = s.label;
-      b.addEventListener("click", () => selectTime(s));
-      timeGrid.appendChild(b);
+    const morning = slots.filter(s => {
+      const d = new Date(s.iso);
+      const opts = { timeZone: BUSINESS_TZ, hour: '2-digit', hour12: false, hourCycle: 'h23' };
+      const h = parseInt(new Intl.DateTimeFormat('en-US', opts).format(d), 10);
+      return h < 12;
     });
+
+    const afternoon = slots.filter(s => {
+      const d = new Date(s.iso);
+      const opts = { timeZone: BUSINESS_TZ, hour: '2-digit', hour12: false, hourCycle: 'h23' };
+      const h = parseInt(new Intl.DateTimeFormat('en-US', opts).format(d), 10);
+      return h >= 12;
+    });
+
+    function renderSlotList(arr, grid) {
+      if (arr.length === 0) {
+        grid.innerHTML = '<p style="font-size:.8rem;color:var(--muted-foreground);text-align:center;grid-column:1/-1;padding:6px 0;">No available slots</p>';
+        return;
+      }
+      arr.forEach((s) => {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "time-cell";
+        if (selectedSlotIso === s.iso) b.classList.add("selected");
+        b.textContent = s.label;
+        b.addEventListener("click", () => selectTime(s));
+        grid.appendChild(b);
+      });
+    }
+
+    renderSlotList(morning, morningGrid);
+    renderSlotList(afternoon, afternoonGrid);
   }
 
   // ------- Selection handlers -------
