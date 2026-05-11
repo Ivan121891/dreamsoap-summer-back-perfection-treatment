@@ -300,3 +300,10 @@ body {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .hidden { display: none !important; }
+
+.loading-slots {
+  font-size: .875rem;
+  color: var(--muted-foreground);
+  text-align: center;
+  padding: 16px 0;
+}

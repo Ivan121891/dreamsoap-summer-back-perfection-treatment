@@ -16,37 +16,21 @@
   };
 
   const BUSINESS_TZ = "Europe/London";
-
-  // Generate 1-hr slots: 9-11 AM, 12-5 PM
-  function buildAllSlots() {
-    const slots = [];
-    for (let h = 9; h <= 17; h++) {
-      if (h === 12) continue; // skip 12 itself, handled in the next range (12 PM)
-      const ampm = h < 12 ? 'AM' : 'PM';
-      const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
-      slots.push({ label: display + ':00 ' + ampm, hour: h, minute: 0 });
-    }
-    // Add 12 PM (noon) manually
-    slots.splice(3, 0, { label: '12:00 PM', hour: 12, minute: 0 });
-    return slots;
-  }
-  let ALL_SLOTS = buildAllSlots();
-
   const DOW_SHORT = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-
   const STEPS = ["date", "time", "details", "confirmed"];
 
   // ------- State -------
   const today = startOfDay(new Date());
   let selectedDate = null;
   let selectedTime = null;
+  let selectedSlotIso = null;
+  let cachedSlots = {}; // { "2026-05-13": [{label, iso}, ...] }
 
   // ------- Elements -------
   const $ = (id) => document.getElementById(id);
   const dateGrid = $("date-grid");
-  const morningGrid = $("morning-grid");
-  const afternoonGrid = $("afternoon-grid");
-
+  const timeGrid = $("time-grid");
+  const timeLoading = $("time-loading");
   const timeSummary    = $("time-summary");
   const detailsSummary = $("details-summary");
   const detailsForm    = $("details-form");
@@ -66,37 +50,6 @@
   }
   function pad(n) { return String(n).padStart(2, "0"); }
 
-  function offsetMinutesForTz(date, tz) {
-    const dtf = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
-      hourCycle: "h23",
-    });
-    const parts = dtf.formatToParts(date);
-    const get = (t) => parseInt(parts.find((p) => p.type === t).value, 10);
-    const asUtc = Date.UTC(
-      get("year"), get("month") - 1, get("day"),
-      get("hour"), get("minute"), get("second"),
-    );
-    return Math.round((asUtc - date.getTime()) / 60000);
-  }
-
-  function dateFromWallTime(year, month, day, hour, minute, tz) {
-    const approx = new Date(Date.UTC(year, month, day, hour, minute));
-    const off = offsetMinutesForTz(approx, tz);
-    return new Date(approx.getTime() - off * 60000);
-  }
-
-  function isoInTz(date, tz) {
-    const off = offsetMinutesForTz(date, tz);
-    const wall = new Date(date.getTime() + off * 60000);
-    const sign = off >= 0 ? "+" : "-";
-    const abs = Math.abs(off);
-    return `${wall.getUTCFullYear()}-${pad(wall.getUTCMonth() + 1)}-${pad(wall.getUTCDate())}` +
-           `T${pad(wall.getUTCHours())}:${pad(wall.getUTCMinutes())}:${pad(wall.getUTCSeconds())}` +
-           `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
-  }
   function sameDay(a, b) {
     return a && b &&
       a.getFullYear() === b.getFullYear() &&
@@ -107,6 +60,51 @@
     return d.toLocaleDateString(undefined, {
       weekday: "long", month: "long", day: "numeric", year: "numeric",
     });
+  }
+  function formatTimeFromIso(isoStr) {
+    const d = new Date(isoStr);
+    const opts = { timeZone: BUSINESS_TZ, hour: '2-digit', minute: '2-digit', hour12: true, hourCycle: 'h12' };
+    return d.toLocaleTimeString('en-US', opts);
+  }
+
+  // ------- Fetch real available slots from GHL -------
+  async function fetchSlotsForDate(date) {
+    const dateKey = date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+    if (cachedSlots[dateKey]) return cachedSlots[dateKey];
+
+    const startMs = date.getTime();
+    const endMs = startMs + 86400000;
+
+    const url = GHL.apiBase + '/calendars/' + encodeURIComponent(GHL.calendarId) +
+      '/free-slots?startDate=' + startMs + '&endDate=' + endMs + '&timezone=' + encodeURIComponent(BUSINESS_TZ);
+
+    const res = await fetch(url, {
+      headers: {
+        'Authorization': 'Bearer ' + GHL.apiKey,
+        'Version': GHL.version,
+        'Accept': 'application/json',
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || ('HTTP ' + res.status));
+
+    const dayData = data[dateKey];
+    if (!dayData || !dayData.slots) return [];
+
+    const slots = dayData.slots
+      .filter(s => {
+        // Skip midnight slot (00:00) if it exists
+        const d = new Date(s);
+        const h = d.getHours() + d.getMinutes() / 60;
+        return h >= 6; // only show slots from 6AM onwards
+      })
+      .map(s => ({
+        label: formatTimeFromIso(s),
+        iso: s,
+      }));
+
+    cachedSlots[dateKey] = slots;
+    return slots;
   }
 
   // ------- Step navigation -------
@@ -121,100 +119,84 @@
   // ------- Calendar render -------
   function renderMonth() {
     dateGrid.innerHTML = "";
-
     const cells = [];
     const cursor = new Date(today);
     for (let i = 0; i < 6; i++) {
       cells.push(new Date(cursor));
       cursor.setDate(cursor.getDate() + 1);
     }
-
     cells.forEach((d) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "date-cell";
       if (sameDay(d, selectedDate)) btn.classList.add("selected");
-
       const dow = document.createElement("span");
       dow.className = "dow";
       dow.textContent = DOW_SHORT[d.getDay()];
-
       const day = document.createElement("span");
       day.className = "day";
       day.textContent = String(d.getDate());
-
       btn.appendChild(dow);
       btn.appendChild(day);
-
       btn.addEventListener("click", () => selectDate(d));
       dateGrid.appendChild(btn);
     });
   }
 
-  function renderTimes() {
+  // ------- Render times from GHL slots -------
+  function renderTimes(slots) {
+    timeGrid.innerHTML = "";
+
     const now = new Date();
     const isToday = selectedDate && sameDay(selectedDate, today);
 
-    function filterPast(slots) {
-      if (!isToday) return slots;
-      return slots.filter(s => {
-        const slotTime = dateFromWallTime(
-          selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(),
-          s.hour, s.minute, BUSINESS_TZ
-        );
-        return slotTime.getTime() > now.getTime();
-      });
+    const available = slots.filter(s => {
+      if (!isToday) return true;
+      return new Date(s.iso).getTime() > now.getTime();
+    });
+
+    if (available.length === 0) {
+      timeGrid.innerHTML = '<p style="font-size:.875rem;color:var(--muted-foreground);text-align:center;grid-column:1/-1;padding:16px 0;">No available slots for this date</p>';
+      return;
     }
 
-    // Morning block (9 AM - 11 AM)
-    const morning = ALL_SLOTS.filter(s => s.hour >= 9 && s.hour <= 11);
-    const morningAvail = filterPast(morning);
-    morningGrid.innerHTML = "";
-    if (morningAvail.length > 0) {
-      morningAvail.forEach((s) => {
-        const b = document.createElement("button");
-        b.type = "button"; b.className = "time-cell";
-        if (selectedTime && selectedTime.label === s.label) b.classList.add("selected");
-        b.textContent = s.label;
-        b.addEventListener("click", () => selectTime(s));
-        morningGrid.appendChild(b);
-      });
-    } else {
-      morningGrid.innerHTML = '<p style="font-size:.8rem;color:var(--muted-foreground);text-align:center;grid-column:1/-1;padding:6px 0;">No available morning slots</p>';
-    }
-
-    // Afternoon block (12 PM - 5 PM)
-    const afternoon = ALL_SLOTS.filter(s => s.hour >= 12 && s.hour <= 17);
-    const afternoonAvail = filterPast(afternoon);
-    afternoonGrid.innerHTML = "";
-    if (afternoonAvail.length > 0) {
-      afternoonAvail.forEach((s) => {
-        const b = document.createElement("button");
-        b.type = "button"; b.className = "time-cell";
-        if (selectedTime && selectedTime.label === s.label) b.classList.add("selected");
-        b.textContent = s.label;
-        b.addEventListener("click", () => selectTime(s));
-        afternoonGrid.appendChild(b);
-      });
-    } else {
-      afternoonGrid.innerHTML = '<p style="font-size:.8rem;color:var(--muted-foreground);text-align:center;grid-column:1/-1;padding:6px 0;">No available afternoon slots</p>';
-    }
+    available.forEach((s) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "time-cell";
+      if (selectedSlotIso === s.iso) b.classList.add("selected");
+      b.textContent = s.label;
+      b.addEventListener("click", () => selectTime(s));
+      timeGrid.appendChild(b);
+    });
   }
 
   // ------- Selection handlers -------
-  function selectDate(d) {
+  async function selectDate(d) {
     selectedDate = startOfDay(d);
     selectedTime = null;
+    selectedSlotIso = null;
     renderMonth();
-    renderTimes();
+    timeGrid.innerHTML = "";
+    if (timeLoading) timeLoading.classList.remove("hidden");
     timeSummary.textContent = formatLongDate(selectedDate);
     showStep("time");
     track("AddToCart", { content_name: SERVICE_NAME });
+
+    try {
+      const slots = await fetchSlotsForDate(selectedDate);
+      if (timeLoading) timeLoading.classList.add("hidden");
+      renderTimes(slots);
+    } catch (err) {
+      console.error("Failed to fetch slots", err);
+      if (timeLoading) timeLoading.classList.add("hidden");
+      timeGrid.innerHTML = '<p style="font-size:.875rem;color:var(--muted-foreground);text-align:center;grid-column:1/-1;padding:16px 0;">Could not load available times. Please try again.</p>';
+    }
   }
 
   function selectTime(slot) {
-    selectedTime = slot;
-    renderTimes();
+    selectedTime = { label: slot.label };
+    selectedSlotIso = slot.iso;
+    renderTimes(cachedSlots[selectedDate.getFullYear() + '-' + pad(selectedDate.getMonth() + 1) + '-' + pad(selectedDate.getDate())] || []);
     detailsSummary.textContent =
       `${formatLongDate(selectedDate)} • ${selectedTime.label}`;
     showStep("details");
@@ -232,8 +214,8 @@
     btn.addEventListener("click", () => showStep(btn.dataset.back));
   });
 
-  // ------- GHL API call -------
-  async function ghlFetch(path, body) {
+  // ------- GHL API call (POST) -------
+  async function ghlPost(path, body) {
     const res = await fetch(GHL.apiBase + path, {
       method: 'POST',
       headers: {
@@ -258,7 +240,7 @@
     const email = $("email").value.trim();
     const phone = $("phone").value.trim();
 
-    if (!name || !email || !phone || !selectedDate || !selectedTime) {
+    if (!name || !email || !phone || !selectedDate || !selectedSlotIso) {
       errorText.textContent = "Please fill in all fields.";
       errorText.classList.remove("hidden");
       return;
@@ -268,17 +250,14 @@
     btnLabel.textContent = "Booking";
     spinner.classList.remove("hidden");
 
-    const start = dateFromWallTime(
-      selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(),
-      selectedTime.hour, selectedTime.minute, BUSINESS_TZ,
-    );
+    const start = new Date(selectedSlotIso);
     const end = new Date(start.getTime() + SERVICE_DURATION_MIN * 60000);
     const [firstName, ...rest] = name.split(/\s+/);
     const lastName = rest.join(" ");
 
     try {
-      // 1) Upsert contact in GHL
-      const contactRes = await ghlFetch('/contacts/upsert', {
+      // 1) Upsert contact
+      const contactRes = await ghlPost('/contacts/upsert', {
         locationId: GHL.locationId,
         firstName: firstName || name,
         lastName: lastName || '-',
@@ -289,14 +268,14 @@
       });
       const contactId = contactRes.contact?.id || contactRes.id;
 
-      // 2) Book appointment (no appointmentStatus = lets GHL use default, not auto-confirmed)
-      await ghlFetch('/calendars/events/appointments', {
+      // 2) Book using exact ISO from GHL's own free-slots
+      await ghlPost('/calendars/events/appointments', {
         calendarId: GHL.calendarId,
         locationId: GHL.locationId,
         contactId,
         assignedUserId: GHL.userId,
-        startTime: isoInTz(start, BUSINESS_TZ),
-        endTime:   isoInTz(end,   BUSINESS_TZ),
+        startTime: start.toISOString(),
+        endTime:   end.toISOString(),
         title:     `${name} — Non-Surgical Facelift & Neck Lift`,
       });
 
@@ -335,10 +314,7 @@
   }
 
   function buildGCalUrl(p) {
-    const start = dateFromWallTime(
-      selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(),
-      selectedTime.hour, selectedTime.minute, BUSINESS_TZ,
-    );
+    const start = new Date(selectedSlotIso);
     const end = new Date(start.getTime() + SERVICE_DURATION_MIN * 60000);
     const fmt = (d) =>
       d.getUTCFullYear() +
@@ -366,6 +342,7 @@
   resetBtn.addEventListener("click", () => {
     selectedDate = null;
     selectedTime = null;
+    selectedSlotIso = null;
     detailsForm.reset();
     renderMonth();
     showStep("date");
@@ -373,6 +350,5 @@
 
   // ------- Init -------
   renderMonth();
-  renderTimes();
   showStep("date");
 })();
