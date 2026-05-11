@@ -69,15 +69,14 @@
 
   // ------- Fetch real available slots from GHL -------
   async function fetchSlotsForDate(date) {
-    const dtf = new Intl.DateTimeFormat('en-CA', { timeZone: BUSINESS_TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
-    const dateKey = dtf.format(date);
-    if (cachedSlots[dateKey]) return cachedSlots[dateKey];
-
     const startMs = date.getTime();
     const endMs = startMs + 86400000;
 
     const url = GHL.apiBase + '/calendars/' + encodeURIComponent(GHL.calendarId) +
       '/free-slots?startDate=' + startMs + '&endDate=' + endMs + '&timezone=' + encodeURIComponent(BUSINESS_TZ);
+
+    const cacheKey = startMs;
+    if (cachedSlots[cacheKey]) return cachedSlots[cacheKey];
 
     const res = await fetch(url, {
       headers: {
@@ -89,10 +88,16 @@
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.message || ('HTTP ' + res.status));
 
-    const dayData = data[dateKey];
-    if (!dayData || !dayData.slots) return [];
+    // Collect all slots from all date keys returned by the API
+    let allSlots = [];
+    for (const key in data) {
+      if (key === 'traceId') continue;
+      if (data[key] && data[key].slots) {
+        allSlots = allSlots.concat(data[key].slots);
+      }
+    }
 
-    const slots = dayData.slots
+    const slots = allSlots
       .filter(s => {
         const d = new Date(s);
         const h = d.getUTCHours() + d.getUTCMinutes() / 60;
@@ -103,7 +108,7 @@
         iso: s,
       }));
 
-    cachedSlots[dateKey] = slots;
+    cachedSlots[cacheKey] = slots;
     return slots;
   }
 
