@@ -69,7 +69,9 @@
 
   // ------- Fetch real available slots from GHL -------
   async function fetchSlotsForDate(date) {
-    const dateKey = date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+    // Format dateKey in America/Los_Angeles timezone to match GHL API response
+    const dtf = new Intl.DateTimeFormat('en-CA', { timeZone: BUSINESS_TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+    const dateKey = dtf.format(date); // returns YYYY-MM-DD in the business timezone
     if (cachedSlots[dateKey]) return cachedSlots[dateKey];
 
     const startMs = date.getTime();
