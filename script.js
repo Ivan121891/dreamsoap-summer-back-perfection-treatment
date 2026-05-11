@@ -15,7 +15,7 @@
     version:    '2021-07-28',
   };
 
-  const BUSINESS_TZ = "Europe/London";
+  const BUSINESS_TZ = "America/Los_Angeles";
   const DOW_SHORT = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const STEPS = ["date", "time", "details", "confirmed"];
 
