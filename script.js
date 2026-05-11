@@ -24,7 +24,7 @@
   let selectedDate = null;
   let selectedTime = null;
   let selectedSlotIso = null;
-  let cachedSlots = {}; // { "2026-05-13": [{label, iso}, ...] }
+  let cachedSlots = {};
 
   // ------- Elements -------
   const $ = (id) => document.getElementById(id);
@@ -69,9 +69,8 @@
 
   // ------- Fetch real available slots from GHL -------
   async function fetchSlotsForDate(date) {
-    // Format dateKey in America/Los_Angeles timezone to match GHL API response
     const dtf = new Intl.DateTimeFormat('en-CA', { timeZone: BUSINESS_TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
-    const dateKey = dtf.format(date); // returns YYYY-MM-DD in the business timezone
+    const dateKey = dtf.format(date);
     if (cachedSlots[dateKey]) return cachedSlots[dateKey];
 
     const startMs = date.getTime();
@@ -95,10 +94,9 @@
 
     const slots = dayData.slots
       .filter(s => {
-        // Skip midnight slot (00:00) if it exists
         const d = new Date(s);
-        const h = d.getHours() + d.getMinutes() / 60;
-        return h >= 6; // only show slots from 6AM onwards
+        const h = d.getUTCHours() + d.getUTCMinutes() / 60;
+        return h >= 6;
       })
       .map(s => ({
         label: formatTimeFromIso(s),
@@ -149,20 +147,12 @@
   function renderTimes(slots) {
     timeGrid.innerHTML = "";
 
-    const now = new Date();
-    const isToday = selectedDate && sameDay(selectedDate, today);
-
-    const available = slots.filter(s => {
-      if (!isToday) return true;
-      return new Date(s.iso).getTime() > now.getTime();
-    });
-
-    if (available.length === 0) {
+    if (!slots || slots.length === 0) {
       timeGrid.innerHTML = '<p style="font-size:.875rem;color:var(--muted-foreground);text-align:center;grid-column:1/-1;padding:16px 0;">No available slots for this date</p>';
       return;
     }
 
-    available.forEach((s) => {
+    slots.forEach((s) => {
       const b = document.createElement("button");
       b.type = "button"; b.className = "time-cell";
       if (selectedSlotIso === s.iso) b.classList.add("selected");
@@ -198,7 +188,6 @@
   function selectTime(slot) {
     selectedTime = { label: slot.label };
     selectedSlotIso = slot.iso;
-    renderTimes(cachedSlots[selectedDate.getFullYear() + '-' + pad(selectedDate.getMonth() + 1) + '-' + pad(selectedDate.getDate())] || []);
     detailsSummary.textContent =
       `${formatLongDate(selectedDate)} • ${selectedTime.label}`;
     showStep("details");
@@ -258,7 +247,6 @@
     const lastName = rest.join(" ");
 
     try {
-      // 1) Upsert contact
       const contactRes = await ghlPost('/contacts/upsert', {
         locationId: GHL.locationId,
         firstName: firstName || name,
@@ -270,7 +258,6 @@
       });
       const contactId = contactRes.contact?.id || contactRes.id;
 
-      // 2) Book using exact ISO from GHL's own free-slots
       await ghlPost('/calendars/events/appointments', {
         calendarId: GHL.calendarId,
         locationId: GHL.locationId,
