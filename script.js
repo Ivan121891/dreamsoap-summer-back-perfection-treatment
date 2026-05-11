@@ -7,24 +7,27 @@
 
   // GHL credentials
   const GHL = {
-    locationId: 'y0BxIuctoWoj4zjXtJbh',
-    calendarId: 'V6eB7Eqm8gFkHNwg6uaJ',
+    locationId: '6Zq67hagaRvdH16ojruj',
+    calendarId: 'ILJEtqDYOn1HzZmQkvGI',
     userId:     '2tQreqXcDpaAiSBqlK7T',
-    apiKey:     'pit-e38f3316-529c-4594-9b3d-275bb16bf491',
+    apiKey:     'pit-c36347d8-0349-4362-b6dc-4c3b2ae25036',
     apiBase:    'https://services.leadconnectorhq.com',
     version:    '2021-07-28',
   };
 
-  const BUSINESS_TZ = "America/Los_Angeles";
+  const BUSINESS_TZ = "Europe/London";
 
-  // Generate 1-hr slots from 9 AM to 5 PM
+  // Generate 1-hr slots: 9-11 AM, 12-5 PM
   function buildAllSlots() {
     const slots = [];
     for (let h = 9; h <= 17; h++) {
+      if (h === 12) continue; // skip 12 itself, handled in the next range (12 PM)
       const ampm = h < 12 ? 'AM' : 'PM';
       const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
       slots.push({ label: display + ':00 ' + ampm, hour: h, minute: 0 });
     }
+    // Add 12 PM (noon) manually
+    slots.splice(3, 0, { label: '12:00 PM', hour: 12, minute: 0 });
     return slots;
   }
   let ALL_SLOTS = buildAllSlots();
@@ -281,7 +284,7 @@
         lastName: lastName || '-',
         email,
         phone,
-        source: 'Jawline Sculpting LP',
+        source: 'Non-Surgical Face & Neck Lift LP',
         tags: ['Non-Surgical Facelift & Neck Lift'],
       });
       const contactId = contactRes.contact?.id || contactRes.id;
