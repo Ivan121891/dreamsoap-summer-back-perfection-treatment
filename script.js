@@ -125,8 +125,11 @@
     dateGrid.innerHTML = "";
     const cells = [];
     const cursor = new Date(today);
-    for (let i = 0; i < 6; i++) {
-      cells.push(new Date(cursor));
+    while (cells.length < 6) {
+      // Skip Sunday (day 0)
+      if (cursor.getDay() !== 0) {
+        cells.push(new Date(cursor));
+      }
       cursor.setDate(cursor.getDate() + 1);
     }
     cells.forEach((d) => {
@@ -160,7 +163,15 @@
       return;
     }
 
-    const morning = slots.filter(s => {
+    // Remove 9am slots from all dates
+    const filtered = slots.filter(s => {
+      const d = new Date(s.iso);
+      const opts = { timeZone: BUSINESS_TZ, hour: '2-digit', hour12: false, hourCycle: 'h23' };
+      const h = parseInt(new Intl.DateTimeFormat('en-US', opts).format(d), 10);
+      return h !== 9;
+    });
+
+    const morning = filtered.filter(s => {
       const d = new Date(s.iso);
       const opts = { timeZone: BUSINESS_TZ, hour: '2-digit', hour12: false, hourCycle: 'h23' };
       const h = parseInt(new Intl.DateTimeFormat('en-US', opts).format(d), 10);
