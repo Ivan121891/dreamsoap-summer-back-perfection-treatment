@@ -325,6 +325,7 @@
         startTime: selectedSlotIso,
         endTime:   isoInTz(endDate, BUSINESS_TZ),
         title:     `${name} — Summer Back Perfection Treatment`,
+        status:    'pending',
       });
 
       track("Lead", { content_name: SERVICE_NAME });
