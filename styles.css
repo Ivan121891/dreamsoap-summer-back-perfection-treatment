@@ -1,14 +1,14 @@
 :root {
-  --bg: #fafafa;
+  --bg: #faf8f5;
   --card-bg: #ffffff;
-  --foreground: #0a0a0a;
-  --muted: #f5f5f5;
-  --muted-foreground: #737373;
-  --border: #e5e5e5;
-  --primary: #F5D88E;
-  --primary-hover: #e8cb82;
-  --primary-fg: #0a0a0a;
-  --ring: #F5D88E;
+  --foreground: #1a1a2e;
+  --muted: #f0eeeb;
+  --muted-foreground: #6b7280;
+  --border: #e0ddd8;
+  --primary: #4A90D9;
+  --primary-hover: #3a7bc8;
+  --primary-fg: #ffffff;
+  --ring: #E8A87C;
   --danger: #dc2626;
   --success: #16a34a;
   --radius-card: 24px;
@@ -77,7 +77,7 @@ body {
   color: var(--foreground);
 }
 .title.center { text-align: center; }
-.title .accent { color: #c8962e; font-weight: 600; }
+.title .accent { color: #E8A87C; font-weight: 600; }
 
 .subtitle {
   font-size: .875rem;
@@ -254,7 +254,7 @@ body {
 }
 .field input:focus {
   border-color: var(--ring);
-  box-shadow: 0 0 0 3px rgba(245, 216, 142, .35);
+  box-shadow: 0 0 0 3px rgba(232, 168, 124, .35);
 }
 .error-text {
   margin: 12px 0 0 0;
@@ -291,8 +291,8 @@ body {
 .spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(10,10,10,.25);
-  border-top-color: #0a0a0a;
+  border: 2px solid rgba(255,255,255,.35);
+  border-top-color: #ffffff;
   border-radius: 50%;
   animation: spin .8s linear infinite;
   margin-left: 8px;

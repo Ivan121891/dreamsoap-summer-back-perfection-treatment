@@ -2,15 +2,15 @@
   "use strict";
 
   // ------- Configuration -------
-  const SERVICE_NAME = "Non-Surgical Facelift & Neck Lift";
+  const SERVICE_NAME = "Summer Back Perfection Treatment";
   const SERVICE_DURATION_MIN = 60;
 
   // GHL credentials
   const GHL = {
-    locationId: '6Zq67hagaRvdH16ojruj',
-    calendarId: 'ILJEtqDYOn1HzZmQkvGI',
+    locationId: 'pJBFlsjSjC7Lty1gVlzh',
+    calendarId: 'P37JWc6DyJzo9EpoJqH9',
     userId:     '2tQreqXcDpaAiSBqlK7T',
-    apiKey:     'pit-c36347d8-0349-4362-b6dc-4c3b2ae25036',
+    apiKey:     'pit-19e91655-07a8-410c-921a-7391b3662655',
     apiBase:    'https://services.leadconnectorhq.com',
     version:    '2021-07-28',
   };
@@ -264,7 +264,7 @@
 const start = new Date(selectedSlotIso);
     const endMs = start.getTime() + SERVICE_DURATION_MIN * 60000;
     const endDate = new Date(endMs);
-    const [firstName, ...rest] = name.split(/\\s+/);
+    const [firstName, ...rest] = name.split(/\s+/);
     const lastName = rest.join(" ");
 
     try {
@@ -274,8 +274,8 @@ const start = new Date(selectedSlotIso);
         lastName: lastName || '-',
         email,
         phone,
-        source: 'Non-Surgical Face & Neck Lift LP',
-        tags: ['Non-Surgical Facelift & Neck Lift'],
+        source: 'Summer Back Perfection Treatment LP',
+        tags: ['Summer Back Perfection Treatment'],
       });
       const contactId = contactRes.contact?.id || contactRes.id;
 
@@ -286,7 +286,7 @@ const start = new Date(selectedSlotIso);
         assignedUserId: GHL.userId,
         startTime: selectedSlotIso,
         endTime:   isoInTz(endDate, BUSINESS_TZ),
-        title:     `${name} — Non-Surgical Facelift & Neck Lift`,
+        title:     `${name} — Summer Back Perfection Treatment`,
       });
 
       track("Lead", { content_name: SERVICE_NAME });
