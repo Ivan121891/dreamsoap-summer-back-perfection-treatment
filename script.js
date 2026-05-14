@@ -24,6 +24,7 @@
   let selectedDate = null;
   let selectedTime = null;
   let selectedSlotIso = null;
+  let cachedSlots = {}; // { "2026-05-13": [{label, iso}, ...] }
 
   // ------- Elements -------
   const $ = (id) => document.getElementById(id);
@@ -59,7 +60,13 @@
       weekday: "long", month: "long", day: "numeric", year: "numeric",
     });
   }
-  // ------- Timezone helpers for hardcoded 1-hour interval slots -------
+  function formatTimeFromIso(isoStr) {
+    const d = new Date(isoStr);
+    const opts = { timeZone: BUSINESS_TZ, hour: '2-digit', minute: '2-digit', hour12: true, hourCycle: 'h12' };
+    return d.toLocaleTimeString('en-US', opts);
+  }
+
+  // ------- Timezone helpers -------
   function offsetMinutesForTz(date, tz) {
     const dtf = new Intl.DateTimeFormat("en-US", {
       timeZone: tz,
@@ -72,12 +79,6 @@
     const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"),
       get("hour"), get("minute"), get("second"));
     return Math.round((asUtc - date.getTime()) / 60000);
-  }
-
-  function dateFromWallTime(year, month, day, hour, minute, tz) {
-    const approx = new Date(Date.UTC(year, month, day, hour, minute));
-    const off = offsetMinutesForTz(approx, tz);
-    return new Date(approx.getTime() - off * 60000);
   }
 
   function isoInTz(date, tz) {
@@ -93,14 +94,43 @@
       sign + pad(Math.floor(abs / 60)) + ":" + pad(abs % 60);
   }
 
-  // ------- Build hardcoded 1-hour interval slots (10 AM to 5 PM) -------
-  function buildAllSlots() {
-    var slots = [];
-    for (var h = 10; h <= 17; h++) {
-      var ampm = h < 12 ? 'AM' : 'PM';
-      var display = h === 0 ? 12 : h > 12 ? h - 12 : h;
-      slots.push({ label: display + ':00 ' + ampm, hour: h, minute: 0 });
-    }
+  // ------- Fetch real available slots from GHL -------
+  async function fetchSlotsForDate(date) {
+    const dateKey = date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+    if (cachedSlots[dateKey]) return cachedSlots[dateKey];
+
+    const startMs = date.getTime();
+    const endMs = startMs + 86400000;
+
+    const url = GHL.apiBase + '/calendars/' + encodeURIComponent(GHL.calendarId) +
+      '/free-slots?startDate=' + startMs + '&endDate=' + endMs + '&timezone=' + encodeURIComponent(BUSINESS_TZ);
+
+    const res = await fetch(url, {
+      headers: {
+        'Authorization': 'Bearer ' + GHL.apiKey,
+        'Version': GHL.version,
+        'Accept': 'application/json',
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || ('HTTP ' + res.status));
+
+    const dayData = data[dateKey];
+    if (!dayData || !dayData.slots) return [];
+
+    const slots = dayData.slots
+      .filter(s => {
+        // Skip midnight slot (00:00) if it exists
+        const d = new Date(s);
+        const h = d.getHours() + d.getMinutes() / 60;
+        return h >= 6; // only show slots from 6AM onwards
+      })
+      .map(s => ({
+        label: formatTimeFromIso(s),
+        iso: s,
+      }));
+
+    cachedSlots[dateKey] = slots;
     return slots;
   }
 
@@ -143,8 +173,8 @@
     });
   }
 
-  // ------- Render hardcoded 1-hour interval time slots -------
-  function renderTimes() {
+  // ------- Render times from GHL slots -------
+  function renderTimes(slots) {
     const morningGrid = $("morning-grid");
     const afternoonGrid = $("afternoon-grid");
     morningGrid.innerHTML = "";
@@ -152,23 +182,33 @@
 
     if (timeLoading) timeLoading.classList.add("hidden");
 
-    var allSlots = buildAllSlots();
+    const now = new Date();
+    const isToday = selectedDate && sameDay(selectedDate, today);
 
-    // Filter past slots for today
-    var isToday = selectedDate && sameDay(selectedDate, today);
-    var now = new Date();
-    var available = isToday
-      ? allSlots.filter(function (s) {
-          var slotTime = dateFromWallTime(
-            selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(),
-            s.hour, s.minute, BUSINESS_TZ
-          );
-          return slotTime.getTime() > now.getTime();
-        })
-      : allSlots;
+    const available = slots.filter(s => {
+      if (!isToday) return true;
+      return new Date(s.iso).getTime() > now.getTime();
+    });
 
-    var morning = available.filter(function (s) { return s.hour < 12; });
-    var afternoon = available.filter(function (s) { return s.hour >= 12; });
+    if (available.length === 0) {
+      const msg = '<p style="font-size:.8rem;color:var(--muted-foreground);text-align:center;grid-column:1/-1;padding:6px 0;">No available slots for this date</p>';
+      morningGrid.innerHTML = msg;
+      return;
+    }
+
+    // Split into morning (< 12 PM) and afternoon (>= 12 PM) using timezone-aware hour
+    function localHour(isoStr) {
+      var d = new Date(isoStr);
+      var off = offsetMinutesForTz(d, BUSINESS_TZ);
+      var wall = new Date(d.getTime() + off * 60000);
+      return wall.getUTCHours() + wall.getUTCMinutes() / 60;
+    }
+    var morning = available.filter(function (s) {
+      return localHour(s.iso) < 12;
+    });
+    var afternoon = available.filter(function (s) {
+      return localHour(s.iso) >= 12;
+    });
 
     function renderSlotList(arr, grid) {
       if (arr.length === 0) {
@@ -178,7 +218,7 @@
       arr.forEach(function (s) {
         var b = document.createElement("button");
         b.type = "button"; b.className = "time-cell";
-        if (selectedTime && selectedTime.hour === s.hour) b.classList.add("selected");
+        if (selectedSlotIso === s.iso) b.classList.add("selected");
         b.textContent = s.label;
         b.addEventListener("click", function () { selectTime(s); });
         grid.appendChild(b);
@@ -190,7 +230,7 @@
   }
 
   // ------- Selection handlers -------
-  function selectDate(d) {
+  async function selectDate(d) {
     selectedDate = startOfDay(d);
     selectedTime = null;
     selectedSlotIso = null;
@@ -198,16 +238,30 @@
     timeSummary.textContent = formatLongDate(selectedDate);
     showStep("time");
     track("AddToCart", { content_name: SERVICE_NAME });
-    renderTimes();
+
+    // Show loading state
+    const morningGrid = $("morning-grid");
+    const afternoonGrid = $("afternoon-grid");
+    morningGrid.innerHTML = "";
+    afternoonGrid.innerHTML = "";
+    if (timeLoading) timeLoading.classList.remove("hidden");
+
+    try {
+      const slots = await fetchSlotsForDate(selectedDate);
+      renderTimes(slots);
+    } catch (err) {
+      console.error("Failed to fetch slots", err);
+      if (timeLoading) timeLoading.classList.add("hidden");
+      morningGrid.innerHTML = '<p style="font-size:.8rem;color:var(--muted-foreground);text-align:center;grid-column:1/-1;padding:16px 0;">Could not load available times. Please try again.</p>';
+    }
   }
 
   function selectTime(slot) {
-    selectedTime = { label: slot.label, hour: slot.hour, minute: slot.minute };
-    var start = dateFromWallTime(
-      selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(),
-      slot.hour, slot.minute, BUSINESS_TZ
-    );
-    selectedSlotIso = isoInTz(start, BUSINESS_TZ);
+    selectedTime = { label: slot.label };
+    selectedSlotIso = slot.iso;
+    // Re-render to show selected state
+    const dateKey = selectedDate.getFullYear() + '-' + pad(selectedDate.getMonth() + 1) + '-' + pad(selectedDate.getDate());
+    renderTimes(cachedSlots[dateKey] || []);
     detailsSummary.textContent =
       formatLongDate(selectedDate) + ' \u2022 ' + selectedTime.label;
     showStep("details");
@@ -261,7 +315,7 @@
     btnLabel.textContent = "Booking";
     spinner.classList.remove("hidden");
 
-const start = new Date(selectedSlotIso);
+    const start = new Date(selectedSlotIso);
     const endMs = start.getTime() + SERVICE_DURATION_MIN * 60000;
     const endDate = new Date(endMs);
     const [firstName, ...rest] = name.split(/\s+/);
@@ -323,7 +377,7 @@ const start = new Date(selectedSlotIso);
     gcalLink.href = buildGCalUrl(p);
   }
 
-  function buildGCalUrl(/* p */) {
+  function buildGCalUrl(p) {
     const startMs = new Date(selectedSlotIso).getTime();
     const endMs = startMs + SERVICE_DURATION_MIN * 60000;
     const fmt = function (ms) {
@@ -355,6 +409,7 @@ const start = new Date(selectedSlotIso);
     selectedDate = null;
     selectedTime = null;
     selectedSlotIso = null;
+    cachedSlots = {};
     detailsForm.reset();
     renderMonth();
     showStep("date");
