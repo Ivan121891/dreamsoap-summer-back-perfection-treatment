@@ -99,36 +99,23 @@
     const dateKey = date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
     if (cachedSlots[dateKey]) return cachedSlots[dateKey];
 
-    const startMs = date.getTime();
-    const endMs = startMs + 86400000;
+    // Generate all desired 1-hour slots: 9-11 AM and 12-5 PM
+    var desiredHours = [9, 10, 11, 12, 13, 14, 15, 16, 17];
+    var off = -420; // PDT offset
+    var sign = "-";
+    var absOff = 420;
+    var tzString = '-07:00';
 
-    const url = GHL.apiBase + '/calendars/' + encodeURIComponent(GHL.calendarId) +
-      '/free-slots?startDate=' + startMs + '&endDate=' + endMs + '&timezone=' + encodeURIComponent(BUSINESS_TZ);
-
-    const res = await fetch(url, {
-      headers: {
-        'Authorization': 'Bearer ' + GHL.apiKey,
-        'Version': GHL.version,
-        'Accept': 'application/json',
-      },
+    var slots = [];
+    desiredHours.forEach(function (h) {
+      var iso = dateKey + 'T' + pad(h) + ':00:00' + tzString;
+      // Use dateKey directly for the label (local date parts)
+      var labelDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), h);
+      var labelStr = labelDate.toLocaleTimeString(undefined, {
+        hour: 'numeric', minute: '2-digit', hour12: true, hourCycle: 'h12'
+      });
+      slots.push({ label: labelStr, iso: iso });
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.message || ('HTTP ' + res.status));
-
-    const dayData = data[dateKey];
-    if (!dayData || !dayData.slots) return [];
-
-    const slots = dayData.slots
-      .filter(s => {
-        // Skip midnight slot (00:00) if it exists
-        const d = new Date(s);
-        const h = d.getHours() + d.getMinutes() / 60;
-        return h >= 6; // only show slots from 6AM onwards
-      })
-      .map(s => ({
-        label: formatTimeFromIso(s),
-        iso: s,
-      }));
 
     cachedSlots[dateKey] = slots;
     return slots;
@@ -149,10 +136,7 @@
     const cells = [];
     const cursor = new Date(today);
     while (cells.length < 6) {
-      // Skip Sunday (day 0)
-      if (cursor.getDay() !== 0) {
-        cells.push(new Date(cursor));
-      }
+      cells.push(new Date(cursor));
       cursor.setDate(cursor.getDate() + 1);
     }
     cells.forEach((d) => {
