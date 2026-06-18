@@ -361,6 +361,7 @@
       sendLead('/api/lead/result', { leadId: leadId, locationId: GHL.locationId, status: bookingStatus, appointmentId: appointmentId, eventId: (typeof eventId !== 'undefined' ? eventId : null), scheduleFired: (!TEST && bookingStatus === 'success'), test: TEST });
       track("Lead", { content_name: SERVICE_NAME });
       if (!TEST && bookingStatus === 'success') track("Schedule", { content_name: SERVICE_NAME });
+      if (!TEST && bookingStatus === 'success') track("CompleteRegistration", { content_name: SERVICE_NAME });
 
       renderConfirmation({
         service: SERVICE_NAME,
